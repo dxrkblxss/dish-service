@@ -5,6 +5,8 @@ using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.HttpOverrides;
 using DishService.Data;
 using DishService.Models;
+using DishService.Middleware;
+using DishService.Extensions;
 
 namespace DishService;
 
@@ -120,13 +122,22 @@ public class Program
             }
         }
 
-        app.MapGet("/health", () => Results.Ok());
+        app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<ExceptionHandlingMiddleware>();
+        app.UseCors("AllowAll");
 
-        app.MapGet("/", async (AppDbContext db, IDistributedCache cache) =>
+        app.MapGet("/health", (HttpContext ctx) => Results.Ok(new { correlation_id = ctx.GetCorrelationId() }));
+
+        app.MapGet("/", async (AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
+            var correlationId = ctx.GetCorrelationId();
+
             var cachedDishes = await cache.GetStringAsync(AllDishesKey);
             if (!string.IsNullOrEmpty(cachedDishes))
-                return Results.Text(cachedDishes, "application/json");
+            {
+                var cached = JsonSerializer.Deserialize<object>(cachedDishes);
+                return Results.Ok(new { data = cached, correlation_id = correlationId });
+            }
 
             var dishes = await db.Dishes
                 .Include(d => d.PriceOptions)
@@ -135,15 +146,20 @@ public class Program
 
             await cache.SetStringAsync(AllDishesKey, jsonData, cacheOptions);
 
-            return Results.Ok(dishes);
+            return Results.Ok(new { data = dishes, correlation_id = correlationId });
         });
 
-        app.MapGet("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache) =>
+        app.MapGet("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
+            var correlationId = ctx.GetCorrelationId();
+
             var cachedDish = await cache.GetStringAsync(DishKey(id));
 
             if (!string.IsNullOrEmpty(cachedDish))
-                return Results.Text(cachedDish, "application/json");
+            {
+                var cached = JsonSerializer.Deserialize<object>(cachedDish);
+                return Results.Ok(new { data = cached, correlation_id = correlationId });
+            }
 
             var dish = await db.Dishes
                 .Include(d => d.PriceOptions)
@@ -155,11 +171,12 @@ public class Program
 
             await cache.SetStringAsync(DishKey(id), jsonData, cacheOptions);
 
-            return Results.Ok(dish);
+            return Results.Ok(new { data = dish, correlation_id = correlationId });
         });
 
-        app.MapPost("/", async (DishCreateDto dto, AppDbContext db, IDistributedCache cache) =>
+        app.MapPost("/", async (DishCreateDto dto, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
+            var correlationId = ctx.GetCorrelationId();
             var dish = new Dish
             {
                 Name = dto.Name.Trim(),
@@ -190,10 +207,10 @@ public class Program
 
             await cache.RemoveAsync(AllDishesKey);
 
-            return Results.Created($"/{dish.Id}", dish);
+            return Results.Created($"/{dish.Id}", new { data = dish, correlation_id = correlationId });
         });
 
-        app.MapDelete("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache) =>
+        app.MapDelete("/{id}", async (Guid id, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
             var affected = await db.Dishes
                 .Where(x => x.Id == id)
@@ -205,10 +222,12 @@ public class Program
                 await cache.RemoveAsync(AllDishesKey);
             }
 
-            return affected == 0 ? Results.NotFound() : Results.NoContent();
+            if (affected == 0) return Results.NotFound();
+
+            return Results.NoContent();
         });
 
-        app.MapPut("/{id}", async (Guid id, DishUpdateDto dto, AppDbContext db, IDistributedCache cache) =>
+        app.MapPut("/{id}", async (Guid id, DishUpdateDto dto, AppDbContext db, IDistributedCache cache, HttpContext ctx) =>
         {
             var dish = await db.Dishes
                 .Include(d => d.PriceOptions)
