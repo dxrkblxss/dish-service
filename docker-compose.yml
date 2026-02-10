@@ -146,7 +146,7 @@ services:
       retries: 6
       start_period: 10s
 
-  # --- Cache ---
+  # --- CACHE ---
   dishservice-redis:
     image: redis:8.4-alpine
     volumes:
