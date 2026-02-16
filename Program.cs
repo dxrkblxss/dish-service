@@ -7,6 +7,7 @@ using DishService.Data;
 using DishService.Models;
 using DishService.Middleware;
 using DishService.Extensions;
+using DishService.DTOs;
 
 namespace DishService;
 
@@ -47,7 +48,6 @@ public class Program
 
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("DefaultConnection not set");
-        builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -107,6 +107,9 @@ public class Program
             c.RoutePrefix = "swagger";
         });
 
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("Running in {Environment}", builder.Environment.EnvironmentName);
+
         using (var scope = app.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
@@ -117,7 +120,7 @@ public class Program
             }
             catch (Exception ex)
             {
-                var logger = services.GetRequiredService<ILogger<Program>>();
+                logger = services.GetRequiredService<ILogger<Program>>();
                 logger.LogError(ex, "An error occurred while migrating the database.");
             }
         }
@@ -132,18 +135,17 @@ public class Program
         {
             var correlationId = ctx.GetCorrelationId();
 
-            var cachedDishes = await cache.GetStringAsync(AllDishesKey);
-            if (!string.IsNullOrEmpty(cachedDishes))
+            var cached = await cache.GetStringAsync(AllDishesKey);
+            if (!string.IsNullOrEmpty(cached))
             {
-                var cached = JsonSerializer.Deserialize<object>(cachedDishes);
-                return Results.Ok(new { data = cached, correlation_id = correlationId });
+                var cachedObj = JsonSerializer.Deserialize<object>(cached);
+                return Results.Ok(new { data = cachedObj, correlation_id = correlationId });
             }
 
             var dishes = await db.Dishes
                 .Include(d => d.PriceOptions)
                 .ToListAsync();
             var jsonData = JsonSerializer.Serialize(dishes);
-
             await cache.SetStringAsync(AllDishesKey, jsonData, cacheOptions);
 
             return Results.Ok(new { data = dishes, correlation_id = correlationId });
@@ -300,7 +302,3 @@ public class Program
         return null;
     }
 }
-
-public record DishPriceOptionDto(string UnitOfMeasure, decimal UnitAmount, decimal Price, string? Label);
-public record DishCreateDto(string Name, string? Description, SoldBy SoldBy, bool IsAvailable, string? ImageUrl, List<DishPriceOptionDto> PriceOptions);
-public record DishUpdateDto(string? Name, string? Description, SoldBy? SoldBy, bool? IsAvailable, string? ImageUrl, List<DishPriceOptionDto>? PriceOptions);
