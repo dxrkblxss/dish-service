@@ -31,3 +31,4 @@ docker-compose.override.*
 .DS_Store
 Thumbs.db
 NuGetCache/
+*.http

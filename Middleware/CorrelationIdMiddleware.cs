@@ -5,11 +5,9 @@ namespace DishService.Middleware;
 public class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     public const string HeaderNameConst = "X-Correlation-ID";
-    // Unified items key used across the app for storing correlation id
     public const string ItemsKeyConst = "CorrelationId";
 
-    // Accepted incoming header names (in order of precedence)
-    public static readonly string[] IncomingHeaderNames = new[] { HeaderNameConst, "X-Request-ID", "Request-Id" };
+    public static readonly string[] IncomingHeaderNames = [HeaderNameConst, "X-Request-ID", "Request-Id"];
 
     private readonly RequestDelegate _next = next;
     private readonly ILogger<CorrelationIdMiddleware> _logger = logger;
@@ -32,7 +30,6 @@ public class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationId
             correlationId = Guid.NewGuid().ToString();
 
         context.Items[ItemsKey] = correlationId;
-        // Only set the response header if it wasn't already set by upstream/proxy
         if (!context.Response.Headers.ContainsKey(HeaderName))
             context.Response.Headers[HeaderName] = correlationId;
 
@@ -49,7 +46,6 @@ public class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationId
             }
         }
 
-        // Use a stable scope key for easier filtering in logs
         using (_logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
         {
             _logger.LogDebug("Assigned correlation id {CorrelationId} to request {Method} {Path}", correlationId, context.Request.Method, context.Request.Path);

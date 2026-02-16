@@ -94,6 +94,24 @@ services:
       retries: 5
       start_period: 10s
 
+  notificationservice:
+    build:
+      context: ../NotificationService
+    image: notificationservice:latest
+    environment:
+      - ASPNETCORE_URLS=http://+:80
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT-Development}
+      - SWAGGER_BASEPATH=/notifications
+    restart: unless-stopped
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --timeout=2 http://127.0.0.1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # --- DATABASES ---
   authservice-db:
     image: postgres:18-alpine
@@ -102,7 +120,7 @@ services:
       POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
       POSTGRES_DB: ${AUTH_DB_NAME}
     volumes:
-      - auth_db_data:/var/lib/postgresql/data
+      - authservice_db_data:/var/lib/postgresql/data
     networks:
       - backend
     healthcheck:
@@ -119,7 +137,7 @@ services:
       POSTGRES_PASSWORD: ${DISH_DB_PASSWORD}
       POSTGRES_DB: ${DISH_DB_NAME}
     volumes:
-      - dish_db_data:/var/lib/postgresql/data
+      - dishservice_db_data:/var/lib/postgresql/data
     networks:
       - backend
     healthcheck:
@@ -150,7 +168,7 @@ services:
   dishservice-redis:
     image: redis:8.4-alpine
     volumes:
-      - dish_redis_data:/data
+      - dishservice_redis_data:/data
     networks:
       - backend
     healthcheck:
@@ -176,7 +194,7 @@ services:
   authservice-redis:
     image: redis:8.4-alpine
     volumes:
-      - auth_redis_data:/data
+      - authservice_redis_data:/data
     networks:
       - backend
     healthcheck:
@@ -191,6 +209,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - backend
     healthcheck:
@@ -205,9 +225,10 @@ networks:
     driver: bridge
 
 volumes:
-  auth_db_data:
-  dish_db_data:
+  authservice_db_data:
+  dishservice_db_data:
   orderservice_db_data:
-  dish_redis_data:
+  authservice_redis_data:
+  dishservice_redis_data:
   orderservice_redis_data:
-  auth_redis_data:
+  rabbitmq_data:
